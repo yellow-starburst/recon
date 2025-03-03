@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+while read -r ARN; do
+  BUCKET=$(echo "$ARN" | awk -F':::' '{print $2}')
+
+  echo "Checking policy for bucket: $BUCKET"
+  POLICY_JSON=$(aws s3api get-bucket-policy --bucket "$BUCKET" 2>/dev/null)
+  if [ $? -ne 0 ]; then
+    echo "  - No bucket policy or error retrieving it."
+    continue
+  fi
+
+  # Convert the policy to pretty JSON:
+  POLICY=$(echo "$POLICY_JSON" | jq -r '.Policy')
+  if echo "$POLICY" | jq -e '.Statement[] 
+    | select(.Effect == "Allow") 
+    | select((.Principal == "*") or (.Principal.AWS == "*")) 
+    | select(.Action == "s3:GetObject" or (.Action[]? == "s3:GetObject"))' >/dev/null; then
+    echo "  [VULNERABLE] Bucket allows public s3:GetObject"
+  else
+    echo "  [OK] Bucket policy not publicly readable for s3:GetObject"
+  fi
+done < bucket_arns.txt
